@@ -1,11 +1,10 @@
-# ru Helper
+# ru Helper by EleanorMay
 
 Менеджер `zapret-discord-youtube` и `tg-ws-proxy` с двумя режимами в одном приложении:
 
 - `ru-helper.exe` или `run_console.bat` — консольный режим;
-- `ru-helper.exe --gui` или `run_gui.bat` — HTML-интерфейс в браузере.
+- `ru-helper.exe --gui` или `run_gui.bat` — HTML интерфейс в браузере.
 
-HTML-интерфейс поднимается на loopback-адресе и открывается отдельным desktop-окном через встроенный Windows MSHTML, а не вкладкой браузера. WebView2 Runtime не требуется. Он использует тот же процесс Python, что и консольный режим. Для переключения из консоли используется пункт `8`.
 
 Для сборки одного Windows-файла:
 
