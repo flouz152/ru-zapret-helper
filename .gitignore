@@ -1,7 +1,10 @@
 build/
+build-fixed/
 dist/
-*.spec
+dist-fixed/
 __pycache__/
 *.pyc
-*.ico
 *.log
+.idea/
+.zapret-staging/
+ru-helper-fixed.spec
