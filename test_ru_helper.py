@@ -105,6 +105,24 @@ class HelperTests(unittest.TestCase):
         backend.console({})
         self.assertTrue(backend.switch_to_console)
 
+    def test_tg_stop_and_status(self):
+        from project_adapters import TgWsProxyAdapter
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            adapter = TgWsProxyAdapter(root)
+            self.assertFalse(adapter.is_running())
+            # stop on uninstalled or non-running shouldn't crash
+            adapter.stop()
+            self.assertFalse(adapter.is_running())
+
+    def test_zapret_install_service_validation(self):
+        from project_adapters import ZapretAdapter
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            adapter = ZapretAdapter(root)
+            with self.assertRaises(FileNotFoundError):
+                adapter.install_service("nonexistent")
+
 
 if __name__ == "__main__":
     unittest.main()

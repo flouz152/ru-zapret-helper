@@ -431,24 +431,24 @@ def spinner_dots(stop_event, prefix):
             except (AttributeError, OSError):
                 pass
         i += 1
-        time.sleep(0.3)
+        time.sleep(0.06)
 
 def boot_animation():
     cls()
     logo_lines = _grad_logo()
     for line in logo_lines:
         print(line)
-        time.sleep(0.07)
-    time.sleep(0.15)
+        time.sleep(0.005)
+    time.sleep(0.02)
     sep_char = "─"
     sep_len  = 50
     print("  ", end="", flush=True)
     for i in range(sep_len):
         gi = int(i * 7 / sep_len)
         print(f"{GRAD[gi]}{sep_char}{RST}", end="", flush=True)
-        time.sleep(0.018)
+        time.sleep(0.002)
     print()
-    time.sleep(0.1)
+    time.sleep(0.02)
 
 def version_line(label, latest, installed, present=None):
     lbl = f"{TXT}{label}{RST}"
@@ -1121,16 +1121,17 @@ def _install_zapret_service(state):
     if not alt:
         print(f"\n  {R}Сначала найдите рабочий альт (пункт 3).{RST}"); pause(); return
 
-    bat = ZAPRET_DIR / "service.bat"
-    if not bat.exists():
-        print(f"\n  {R}service.bat не найден в {ZAPRET_DIR}{RST}"); pause(); return
-
-    changed = patch_service_bat(ZAPRET_DIR)
-    print(f"\n  {TXT}Устанавливаем сервис через service.bat...{RST}")
+    print(f"\n  {TXT}Установка службы zapret в автозапуск...{RST}")
     print(f"  {DIM}Альт: {alt}{RST}\n")
-    if changed:
-        print(f"  {DIM}Проверка конфигураций будет в этом окне; Esc возвращает в меню.{RST}\n")
-    _run_batch_same_console(bat)
+    log(f"Установка службы zapret (альт: {alt})")
+    try:
+        PROJECTS.zapret.install_service(alt)
+        log(f"Служба zapret успешно установлена в автозапуск: {alt}")
+        print(f"  {GRAD[0]}✓ {TXT}Служба zapret установлена в автозапуск и запущена ({alt}).{RST}")
+    except Exception as e:
+        log(f"Ошибка установки службы zapret: {e}")
+        print(f"  {R}Ошибка установки службы zapret: {e}{RST}")
+    pause()
 
 def _set_tgproxy_autostart(enabled):
     exe = PROJECTS.tgproxy.executable

@@ -626,8 +626,17 @@ class Backend:
             self._log("Автообновление tg-ws-proxy запущено")
             self.submit("install_tg", {})
 
+    def install_zapret_service(self, _data):
+        strategy = self.state.get("zapret_strategy")
+        if not strategy:
+            raise ValueError("Сначала выберите активный альт")
+        self._log("Установка службы zapret в автозапуск: " + strategy)
+        self.projects.zapret.install_service(strategy)
+        return f"Служба zapret установлена в автозапуск: {strategy}"
+
     _actions = {
         "install_zapret": install_zapret,
+        "install_zapret_service": install_zapret_service,
         "install_tg": install_tg,
         "refresh": refresh,
         "set_auto_update": set_auto_update,
@@ -715,7 +724,7 @@ button {
   gap: 6px;
   font-weight: 500;
   font-size: 13px;
-  transition: all 0.15s ease;
+  transition: all 0.08s ease;
 }
 button:hover:not(:disabled) {
   background: var(--surface-hover);
@@ -737,7 +746,7 @@ button.btn-primary {
 button.btn-primary:hover:not(:disabled) {
   background: #153823;
   border-color: var(--green);
-  box-shadow: 0 0 10px var(--green-glow);
+  box-shadow: 0 0 8px var(--green-glow);
 }
 button.btn-danger {
   background: var(--red-bg);
@@ -747,7 +756,7 @@ button.btn-danger {
 button.btn-danger:hover:not(:disabled) {
   background: #3e1a1d;
   border-color: var(--red);
-  box-shadow: 0 0 10px var(--red-glow);
+  box-shadow: 0 0 8px var(--red-glow);
 }
 button.btn-blue {
   background: var(--blue-bg);
@@ -789,10 +798,10 @@ button.btn-blue:hover:not(:disabled) {
   text-shadow: 0 0 6px var(--green-glow);
   white-space: pre;
   user-select: none;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 3px 5px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
   display: inline-block;
 }
 .logo-icon {
@@ -838,7 +847,7 @@ button.btn-blue:hover:not(:disabled) {
   border-radius: 50%;
   background: var(--green);
   box-shadow: 0 0 6px var(--green);
-  animation: pulse 2s infinite;
+  animation: pulse 0.8s infinite;
 }
 .pulse-dot.busy {
   background: var(--yellow);
@@ -1270,9 +1279,9 @@ button.btn-blue:hover:not(:disabled) {
         <div class="pulse-dot" id="live-dot"></div>
         <span id="live-text">Подключение…</span>
       </div>
-      <button class="btn-primary" onclick="run('start_all')">▶ Запустить всё</button>
-      <button class="btn-danger" onclick="run('stop_all')">⏹ Остановить всё</button>
-      <button class="btn-blue" onclick="run('console')">🖥 Консоль</button>
+      <button class="btn-primary" onclick="run('start_all')">Запустить всё</button>
+      <button class="btn-danger" onclick="run('stop_all')">Остановить всё</button>
+      <button class="btn-blue" onclick="run('console')">Консоль</button>
     </div>
   </header>
 
@@ -1285,11 +1294,11 @@ button.btn-blue:hover:not(:disabled) {
           <div class="service-name">
             zapret
             <span class="badge" id="zap-ver-badge">v...</span>
-            <span class="badge badge-yellow" id="zap-update-badge" style="display:none">Обновление!</span>
+            <span class="badge badge-yellow" id="zap-update-badge" style="display:none">Обновление</span>
           </div>
           <span class="app-subtitle">Обход замедления Discord / YouTube</span>
         </div>
-        <button onclick="run('refresh')" title="Проверить обновления">🔄</button>
+        <button onclick="run('refresh')" title="Проверить обновления">Обновить</button>
       </div>
 
       <div class="power-widget" onclick="run('toggle_zapret')">
@@ -1316,9 +1325,10 @@ button.btn-blue:hover:not(:disabled) {
       </div>
 
       <div class="service-actions-bar">
-        <button onclick="run('restart_zapret')">🔄 Перезапустить</button>
-        <button onclick="run('install_zapret')">📦 Установить / Обновить</button>
-        <button onclick="run('service')">🛠 service.bat</button>
+        <button onclick="run('install_zapret_service')" title="Установить активный альт в автозапуск как службу">В автозапуск</button>
+        <button onclick="run('restart_zapret')">Перезапустить</button>
+        <button onclick="run('install_zapret')">Установить / Обновить</button>
+        <button onclick="run('service')">service.bat</button>
       </div>
     </div>
 
@@ -1329,11 +1339,11 @@ button.btn-blue:hover:not(:disabled) {
           <div class="service-name">
             tg-ws-proxy
             <span class="badge" id="tg-ver-badge">v...</span>
-            <span class="badge badge-yellow" id="tg-update-badge" style="display:none">Обновление!</span>
+            <span class="badge badge-yellow" id="tg-update-badge" style="display:none">Обновление</span>
           </div>
           <span class="app-subtitle">MTProto WebSocket прокси для Telegram</span>
         </div>
-        <button onclick="run('telegram')" class="btn-primary" title="Подключить в Telegram">✈ В Telegram</button>
+        <button onclick="run('telegram')" class="btn-primary" title="Подключить в Telegram">В Telegram</button>
       </div>
 
       <div class="power-widget" onclick="run('toggle_tg')">
@@ -1360,9 +1370,9 @@ button.btn-blue:hover:not(:disabled) {
       </div>
 
       <div class="service-actions-bar">
-        <button onclick="run('restart_tg')">🔄 Перезапустить</button>
-        <button onclick="run('install_tg')">📦 Установить / Обновить</button>
-        <button onclick="run('autostart')">⚙ Автозапуск</button>
+        <button onclick="run('restart_tg')">Перезапустить</button>
+        <button onclick="run('install_tg')">Установить / Обновить</button>
+        <button onclick="run('autostart')">Автозапуск</button>
       </div>
     </div>
   </section>
@@ -1375,14 +1385,14 @@ button.btn-blue:hover:not(:disabled) {
       <!-- Working Alt -->
       <div class="panel">
         <div class="panel-header">
-          <div class="panel-title">🎯 Рабочий альт (стратегия zapret)</div>
+          <div class="panel-title">Рабочий альт (стратегия zapret)</div>
           <span class="badge badge-green" id="active-alt-badge">не выбран</span>
         </div>
         <div class="alt-control-row">
           <select id="alt-select" class="custom-select" onchange="saveAlt(this.value)">
             <option value="">Выберите стратегию...</option>
           </select>
-          <button class="btn-primary" onclick="showModal('alt-modal')">🔍 Найти лучший альт</button>
+          <button class="btn-primary" onclick="showModal('alt-modal')">Найти лучший альт</button>
         </div>
         <div class="alt-results-box" id="alt-results-list">
           <div style="color:var(--text-dim); text-align:center; padding:10px;">Результаты тестирования пока отсутствуют</div>
@@ -1392,8 +1402,8 @@ button.btn-blue:hover:not(:disabled) {
       <!-- Diagnostics -->
       <div class="panel">
         <div class="panel-header">
-          <div class="panel-title">🌐 Диагностика доступности</div>
-          <button class="btn-blue" onclick="run('diagnostics')">⚡ Проверить сейчас</button>
+          <div class="panel-title">Диагностика доступности</div>
+          <button class="btn-blue" onclick="run('diagnostics')">Проверить сейчас</button>
         </div>
         <table class="diag-table">
           <thead>
@@ -1411,8 +1421,8 @@ button.btn-blue:hover:not(:disabled) {
       <!-- TG Config Form -->
       <div class="panel">
         <div class="panel-header">
-          <div class="panel-title">⚙ Настройки tg-ws-proxy</div>
-          <button class="btn-primary" onclick="submitConfig()">💾 Сохранить</button>
+          <div class="panel-title">Настройки tg-ws-proxy</div>
+          <button class="btn-primary" onclick="submitConfig()">Сохранить</button>
         </div>
         <form id="tg-form" onsubmit="submitConfig(); return false;" class="form-grid">
           <div class="form-group">
@@ -1427,8 +1437,8 @@ button.btn-blue:hover:not(:disabled) {
             <label>Secret ключ (32 hex)</label>
             <div class="secret-group">
               <input class="form-input" id="cfg-secret" name="secret" placeholder="32 hex символа">
-              <button type="button" onclick="generateSecret()" title="Сгенерировать">🎲</button>
-              <button type="button" onclick="copySecret()" title="Скопировать">📋</button>
+              <button type="button" onclick="generateSecret()" title="Сгенерировать">Сгенерировать</button>
+              <button type="button" onclick="copySecret()" title="Скопировать">Скопировать</button>
             </div>
           </div>
           <div class="form-group">
@@ -1457,12 +1467,12 @@ button.btn-blue:hover:not(:disabled) {
       <!-- Logs Terminal -->
       <div class="panel">
         <div class="panel-header">
-          <div class="panel-title">📜 Журнал событий (Логи)</div>
+          <div class="panel-title">Журнал событий (Логи)</div>
           <div style="display:flex; gap:6px;">
-            <button onclick="copyLogs()" title="Скопировать логи">📋 Скопировать</button>
-            <button onclick="run('clear_logs')" title="Очистить">🗑 Очистить</button>
-            <button onclick="run('base')" title="Открыть папку данных">📂 Папка</button>
-            <button onclick="run('discussions')" title="Обсуждения GitHub">💬 GitHub</button>
+            <button onclick="copyLogs()" title="Скопировать логи">Скопировать</button>
+            <button onclick="run('clear_logs')" title="Очистить">Очистить</button>
+            <button onclick="run('base')" title="Открыть папку данных">Папка</button>
+            <button onclick="run('discussions')" title="Обсуждения GitHub">GitHub</button>
           </div>
         </div>
         <div class="terminal-box" id="terminal-log">Ожидание записей журнала…</div>
@@ -1476,7 +1486,7 @@ button.btn-blue:hover:not(:disabled) {
 <!-- Modal Dialog -->
 <div class="modal-overlay" id="alt-modal" style="display:none;">
   <div class="modal-box">
-    <div class="modal-title">🔍 Тестирование конфигураций zapret</div>
+    <div class="modal-title">Тестирование конфигураций zapret</div>
     <div class="modal-desc">
       Будут протестированы все доступные стратегии general*.bat по целевым сайтам.
       Это займет 2-4 минуты и временно перезапустит службу winws.<br><br>
@@ -1484,7 +1494,7 @@ button.btn-blue:hover:not(:disabled) {
     </div>
     <div class="modal-actions">
       <button onclick="hideModal('alt-modal')">Отмена</button>
-      <button class="btn-primary" onclick="hideModal('alt-modal'); run('test_alts')">▶ Начать тестирование</button>
+      <button class="btn-primary" onclick="hideModal('alt-modal'); run('test_alts')">Начать тестирование</button>
     </div>
   </div>
 </div>
@@ -1506,7 +1516,7 @@ function toast(msg, isError) {
   window.clearTimeout(window.toastTimer);
   window.toastTimer = window.setTimeout(function() {
     t.style.display = 'none';
-  }, 4000);
+  }, 2000);
 }
 
 function api(url, method, payload, onSuccess, onError) {
@@ -1620,9 +1630,9 @@ function renderUI(d) {
   $('zap-state-text').textContent = zapRunning ? 'РАБОТАЕТ' : 'ОСТАНОВЛЕН';
   $('zap-hint').textContent = zapRunning ? 'Нажмите, чтобы остановить' : 'Нажмите, чтобы запустить';
   $('zap-ver-badge').textContent = d.state.zapret_version || 'не установлен';
-  $('zap-winws-val').innerHTML = z.winws ? '<span style="color:var(--green)">🟢 Запущен</span>' : '<span style="color:var(--red)">🔴 Остановлен</span>';
+  $('zap-winws-val').innerHTML = z.winws ? '<span style="color:var(--green)">Запущен</span>' : '<span style="color:var(--red)">Остановлен</span>';
   
-  var svcText = z.service === 'running' ? '🟢 Работает' : (z.service === 'stopped' ? '⚪ Остановлена' : (z.service === 'missing' ? '⚪ Не установлена' : '⚪ ' + escapeHtml(z.service)));
+  var svcText = z.service === 'running' ? '<span style="color:var(--green)">Работает</span>' : (z.service === 'stopped' ? 'Остановлена' : (z.service === 'missing' ? 'Не установлена' : escapeHtml(z.service)));
   $('zap-service-val').innerHTML = svcText;
   $('zap-count-val').textContent = z.strategy_count || 0;
 
@@ -1639,7 +1649,7 @@ function renderUI(d) {
   $('tg-state-text').textContent = tgRunning ? 'РАБОТАЕТ' : 'ОСТАНОВЛЕН';
   $('tg-hint').textContent = tgRunning ? 'Нажмите, чтобы остановить' : 'Нажмите, чтобы запустить';
   $('tg-ver-badge').textContent = d.state.tgproxy_version || 'не установлен';
-  $('tg-proc-val').innerHTML = tgRunning ? '<span style="color:var(--green)">🟢 Запущен</span>' : '<span style="color:var(--red)">🔴 Остановлен</span>';
+  $('tg-proc-val').innerHTML = tgRunning ? '<span style="color:var(--green)">Запущен</span>' : '<span style="color:var(--red)">Остановлен</span>';
   $('tg-port-val').innerHTML = (t.port || 1443) + (t.port_open ? ' <span style="color:var(--green)">(открыт)</span>' : ' <span style="color:var(--red)">(закрыт)</span>');
   $('tg-auto-val').innerHTML = t.autostart ? '<span style="color:var(--green)">Включён</span>' : '<span style="color:var(--text-dim)">Выключен</span>';
 
@@ -1677,7 +1687,7 @@ function renderUI(d) {
     for (var j = 0; j < items.length; j++) {
       var it = items[j];
       var cls = 'alt-item' + (it.best ? ' best' : '') + (it.ok ? ' ok' : ' bad');
-      htmlStr += '<div class="' + cls + '"><span>' + (it.best ? '⭐ ' : '') + escapeHtml(it.name) + '</span><span>' + escapeHtml(it.summary) + '</span></div>';
+      htmlStr += '<div class="' + cls + '"><span>' + (it.best ? '[топ] ' : '') + escapeHtml(it.name) + '</span><span>' + escapeHtml(it.summary) + '</span></div>';
     }
     resBox.innerHTML = htmlStr;
   } else {
@@ -1728,7 +1738,7 @@ function poll() {
 // Initial setup
 loadConfig();
 poll();
-window.setInterval(poll, 1500);
+window.setInterval(poll, 800);
 </script>
 </body>
 </html>"""

@@ -310,8 +310,11 @@ class TgWsProxyAdapter:
         return TG_LOG_FILE
 
     def is_running(self) -> bool:
+        names = ["TgWsProxy.exe", "TgWsProxy_windows.exe", "TgWsProxy_windows_arm64.exe", "TgWsProxy_windows_7_64bit.exe", "TgWsProxy_windows_7_32bit.exe"]
         exe = self.executable
-        return bool(exe and _is_process_running(exe.name))
+        if exe and exe.name not in names:
+            names.insert(0, exe.name)
+        return any(_is_process_running(n) for n in names)
 
     def status(self) -> Dict[str, Any]:
         config = load_tg_config()
@@ -334,16 +337,24 @@ class TgWsProxyAdapter:
         return subprocess.Popen([str(executable)], cwd=str(self.root), close_fds=True, creationflags=NO_WINDOW)
 
     def stop(self) -> None:
-        executable = self.executable
-        if not executable:
-            return
-        result = subprocess.run(
-            ["taskkill.exe", "/F", "/IM", executable.name],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            creationflags=NO_WINDOW,
-        )
-        if result.returncode not in (0, 128):
-            raise RuntimeError(result.stdout.strip() or result.stderr.strip() or "Не удалось остановить tg-ws-proxy")
+        names = ["TgWsProxy.exe", "TgWsProxy_windows.exe", "TgWsProxy_windows_arm64.exe", "TgWsProxy_windows_7_64bit.exe", "TgWsProxy_windows_7_32bit.exe"]
+        exe = self.executable
+        if exe and exe.name not in names:
+            names.insert(0, exe.name)
+        for name in names:
+            try:
+                subprocess.run(
+                    ["taskkill.exe", "/F", "/IM", name],
+                    capture_output=True, text=True, check=False,
+                    creationflags=NO_WINDOW,
+                )
+            except OSError:
+                pass
+        t_end = time.monotonic() + 1.5
+        while time.monotonic() < t_end:
+            if not self.is_running():
+                return
+            time.sleep(0.1)
 
     def open_in_telegram(self) -> None:
         if not webbrowser.open(tg_proxy_url(load_tg_config())):
@@ -498,6 +509,70 @@ class ZapretAdapter:
             f"(код cmd: {code if code is not None else 'неизвестен'})"
         )
 
+    def install_service(self, strategy: Optional[str] = None) -> None:
+        if sys.platform != "win32":
+            raise RuntimeError("Установка службы поддерживается только в Windows")
+        path = self.normalize_strategy(strategy) if strategy else self.strategies()[0] if self.strategies() else None
+        if not path:
+            raise FileNotFoundError(f"Не найдена конфигурация {strategy or ''}")
+
+        bin_dir = self.root / "bin"
+        winws_exe = bin_dir / "winws.exe"
+        if not winws_exe.exists():
+            raise FileNotFoundError("winws.exe не найден")
+
+        self.stop()
+        time.sleep(0.3)
+
+        try:
+            subprocess.run(["netsh", "interface", "tcp", "set", "global", "timestamps=enabled"],
+                           capture_output=True, check=False, creationflags=NO_WINDOW)
+        except OSError:
+            pass
+
+        raw_args = parse_strategy_args(path, self.root)
+        if not raw_args:
+            raise ValueError(f"Не удалось получить аргументы из {path.name}")
+
+        bin_path_val = f'"{winws_exe}" {raw_args}'
+
+        try:
+            subprocess.run([SC_EXE, "stop", "zapret"], capture_output=True, check=False, creationflags=NO_WINDOW)
+            subprocess.run([SC_EXE, "delete", "zapret"], capture_output=True, check=False, creationflags=NO_WINDOW)
+            time.sleep(0.3)
+        except OSError:
+            pass
+
+        res = subprocess.run(
+            [SC_EXE, "create", "zapret", f"binPath= {bin_path_val}", 'DisplayName= "zapret"', "start= auto"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            creationflags=NO_WINDOW,
+        )
+        if res.returncode != 0:
+            raise RuntimeError(res.stdout.strip() or res.stderr.strip() or "Не удалось создать службу zapret")
+
+        subprocess.run(
+            [SC_EXE, "description", "zapret", "Zapret DPI bypass software"],
+            capture_output=True, check=False, creationflags=NO_WINDOW,
+        )
+
+        res_start = subprocess.run(
+            [SC_EXE, "start", "zapret"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            creationflags=NO_WINDOW,
+        )
+
+        try:
+            import winreg
+            with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r"System\CurrentControlSet\Services\zapret") as key:
+                winreg.SetValueEx(key, "zapret-discord-youtube", 0, winreg.REG_SZ, path.stem)
+        except Exception:
+            pass
+
+        time.sleep(0.5)
+        if self._service_status() != "running" and not _is_process_running("winws.exe"):
+            raise RuntimeError(f"Служба установлена, но не запустилась: {res_start.stdout.strip() or res_start.stderr.strip()}")
+
     def stop(self) -> None:
         try:
             subprocess.run(["taskkill.exe", "/F", "/IM", "winws.exe"],
@@ -509,6 +584,11 @@ class ZapretAdapter:
                 subprocess.run(["net", "stop", "zapret"], capture_output=True, check=False, creationflags=NO_WINDOW)
         except OSError:
             pass
+        t_end = time.monotonic() + 1.5
+        while time.monotonic() < t_end:
+            if not _is_process_running("winws.exe") and self._service_status() != "running":
+                return
+            time.sleep(0.1)
 
 
 class UnifiedAdapter:
