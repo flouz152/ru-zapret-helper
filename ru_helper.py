@@ -1402,11 +1402,15 @@ def _switch_to_gui():
         hide_console()
         from ru_helper_gui import main as gui_main
         switched_to_console = gui_main()
-        show_console()
-        cls()
         if switched_to_console:
+            show_console()
+            cls()
             print(f"\n  {GRAD[0]}✓ {TXT}Возврат в консольный режим.{RST}\n")
-        return False
+            return False
+        else:
+            sys.exit(0)
+    except SystemExit:
+        sys.exit(0)
     except Exception as e:
         show_console()
         print(f"\n  {R}Не удалось открыть HTML-окно: {e}{RST}")
@@ -1643,7 +1647,7 @@ def main():
         from ru_helper_gui import main as gui_main
         switched_to_console = gui_main()
         if not switched_to_console:
-            return
+            sys.exit(0)
         show_console()
     boot_animation()
     state = load_state()

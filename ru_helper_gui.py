@@ -269,8 +269,9 @@ def _notify(title, message):
 class Backend:
     def __init__(self):
         self.state = core.load_state()
-        state_changed = "auto_update_tg" not in self.state
+        state_changed = "auto_update_tg" not in self.state or "auto_update_zapret" not in self.state
         self.state.setdefault("auto_update_tg", True)
+        self.state.setdefault("auto_update_zapret", False)
         if state_changed:
             core.save_state(self.state)
         self.projects = UnifiedAdapter()
@@ -280,6 +281,7 @@ class Backend:
         if best and not self.state.get("zapret_strategy"):
             self.state["zapret_strategy"] = best
             core.save_state(self.state)
+        self.active_subprocesses = []
         self.busy = False
         self.status = "Готово"
         self.message = ""
@@ -435,6 +437,33 @@ class Backend:
         core.save_state(self.state)
         return "Автообновление TG включено" if self.state["auto_update_tg"] else "Автообновление TG выключено"
 
+    def set_auto_update_zapret(self, data):
+        self.state["auto_update_zapret"] = bool(data.get("enabled"))
+        core.save_state(self.state)
+        return "Автообновление zapret включено" if self.state["auto_update_zapret"] else "Автообновление zapret выключено"
+
+    def stop_zapret_tasks(self, _data=None):
+        self._log("Остановка процессов поиска и фоновых скриптов zapret...")
+        with self.lock:
+            for p in list(self.active_subprocesses):
+                try:
+                    p.terminate()
+                    p.kill()
+                except Exception:
+                    pass
+            self.active_subprocesses.clear()
+            self.busy = False
+            self.status = "Процессы zapret остановлены"
+            self.message = "Все фоновые поиски и скрипты zapret остановлены"
+        try:
+            subprocess.run(["taskkill.exe", "/F", "/FI", "WINDOWTITLE eq *test zapret*"],
+                           capture_output=True, check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            subprocess.run(["taskkill.exe", "/F", "/FI", "WINDOWTITLE eq *service.bat*"],
+                           capture_output=True, check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except Exception:
+            pass
+        return "Все фоновые процессы zapret остановлены"
+
     def test_alts(self, _data):
         if not core.is_admin():
             raise PermissionError("Для проверки конфигураций нужны права администратора")
@@ -458,11 +487,18 @@ class Backend:
                 cwd=str(root), env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-            for line in process.stdout:
-                line = line.strip()
-                if line:
-                    self._log(line[:280])
-            process.wait()
+            with self.lock:
+                self.active_subprocesses.append(process)
+            try:
+                for line in process.stdout:
+                    line = line.strip()
+                    if line:
+                        self._log(line[:280])
+                process.wait()
+            finally:
+                with self.lock:
+                    if process in self.active_subprocesses:
+                        self.active_subprocesses.remove(process)
             results, best = _parse_alt_results(root / "utils" / "test results")
             with self.lock:
                 self.alt_results = results
@@ -586,7 +622,7 @@ class Backend:
         if not bat.exists():
             raise FileNotFoundError("Сначала установите zapret")
         core.patch_service_bat(core.ZAPRET_DIR)
-        subprocess.Popen(
+        proc = subprocess.Popen(
             [core.COMSPEC, "/d", "/c", f'call "{bat.name}"'],
             cwd=str(bat.parent),
             stdin=subprocess.DEVNULL,
@@ -594,6 +630,8 @@ class Backend:
             stderr=subprocess.DEVNULL,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
+        with self.lock:
+            self.active_subprocesses.append(proc)
         return "service.bat запущен"
 
     def base(self, _data):
@@ -630,9 +668,13 @@ class Backend:
         for label, installed, latest in updates:
             _notify("Доступно обновление", f"{label}: {installed} → {latest}")
         tg_update = next((item for item in updates if item[0] == "tg-ws-proxy"), None)
-        if tg_update and self.state.get("auto_update_tg") and self.projects.tgproxy.executable:
+        if tg_update and self.state.get("auto_update_tg", True) and self.projects.tgproxy.executable:
             self._log("Автообновление tg-ws-proxy запущено")
             self.submit("install_tg", {})
+        zap_update = next((item for item in updates if item[0] == "zapret"), None)
+        if zap_update and self.state.get("auto_update_zapret", False) and self.projects.zapret.installed():
+            self._log("Автообновление zapret запущено")
+            self.submit("install_zapret", {})
 
     def install_zapret_service(self, _data):
         strategy = self.state.get("zapret_strategy")
@@ -648,6 +690,8 @@ class Backend:
         "install_tg": install_tg,
         "refresh": refresh,
         "set_auto_update": set_auto_update,
+        "set_auto_update_zapret": set_auto_update_zapret,
+        "stop_zapret_tasks": stop_zapret_tasks,
         "test_alts": test_alts,
         "save_alt": save_alt,
         "start_zapret": start_zapret,
@@ -1286,6 +1330,7 @@ button.btn-blue:hover:not(:disabled) {
       <div class="status-pill">
         <div class="pulse-dot" id="live-dot"></div>
         <span id="live-text">Подключение…</span>
+        <span class="badge" id="live-count-badge" style="margin-left:4px; font-size:11px;">0/2</span>
       </div>
       <button class="btn-primary" onclick="run('start_all')">Запустить всё</button>
       <button class="btn-danger" onclick="run('stop_all')">Остановить всё</button>
@@ -1340,6 +1385,7 @@ button.btn-blue:hover:not(:disabled) {
       <div class="service-actions-bar">
         <button onclick="run('install_zapret_service')" title="Установить активный альт в автозапуск как службу">В автозапуск</button>
         <button onclick="run('restart_zapret')">Перезапустить</button>
+        <button onclick="run('stop_zapret_tasks')" class="btn-danger" title="Остановить поиски, service.bat и фоновые процессы zapret">Остановить процессы</button>
         <button onclick="run('install_zapret')">Установить / Обновить</button>
         <button onclick="run('service')">service.bat</button>
       </div>
@@ -1411,6 +1457,7 @@ button.btn-blue:hover:not(:disabled) {
             <option value="">Выберите стратегию...</option>
           </select>
           <button class="btn-primary" onclick="showModal('alt-modal')">Найти лучший альт</button>
+          <button class="btn-danger" onclick="run('stop_zapret_tasks')" title="Остановить поиск лучшего альта">Остановить поиск</button>
         </div>
         <div class="alt-results-box" id="alt-results-list">
           <div style="color:var(--text-dim); text-align:center; padding:10px;">Результаты тестирования пока отсутствуют</div>
@@ -1434,8 +1481,34 @@ button.btn-blue:hover:not(:disabled) {
       </div>
     </div>
 
-    <!-- Right Column: TG Config & Logs -->
+    <!-- Right Column: Tools & Updates, TG Config, Logs -->
     <div style="display:flex; flex-direction:column; gap:16px;">
+
+      <!-- Tools & Updates Panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Инструменты и обновления</div>
+          <button onclick="run('refresh')" title="Проверить обновления">Проверить обновления</button>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px;">
+            <button onclick="showModal('readme-modal')" class="btn-blue" title="README проектов и решение проблем">README</button>
+            <button onclick="run('base')" title="Открыть папку данных ru_helper">Папка</button>
+            <button onclick="run('discussions')" title="Обсуждения zapret на GitHub (решения проблем)">GitHub</button>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px; padding-top:8px; border-top:1px solid var(--border);">
+            <label class="checkbox-line">
+              <input type="checkbox" id="auto-update-tg-toggle" onchange="run('set_auto_update', {enabled: this.checked})">
+              Автообновление tg-ws-proxy при запуске
+            </label>
+            <label class="checkbox-line">
+              <input type="checkbox" id="auto-update-zapret-toggle" onchange="run('set_auto_update_zapret', {enabled: this.checked})">
+              Автообновление zapret при запуске
+            </label>
+          </div>
+        </div>
+      </div>
+
       <!-- TG Config Form -->
       <div class="panel">
         <div class="panel-header">
@@ -1473,12 +1546,6 @@ button.btn-blue:hover:not(:disabled) {
               Включить Cloudflare fallback
             </label>
           </div>
-          <div class="form-group full-width">
-            <label class="checkbox-line">
-              <input type="checkbox" id="auto-update-toggle" onchange="run('set_auto_update', {enabled: this.checked})">
-              Автообновление tg-ws-proxy при запуске
-            </label>
-          </div>
         </form>
       </div>
 
@@ -1489,9 +1556,6 @@ button.btn-blue:hover:not(:disabled) {
           <div style="display:flex; gap:6px;">
             <button onclick="copyLogs()" title="Скопировать логи">Скопировать</button>
             <button onclick="run('clear_logs')" title="Очистить">Очистить</button>
-            <button onclick="showModal('readme-modal')" title="README проектов и решение проблем">README</button>
-            <button onclick="run('base')" title="Открыть папку данных">Папка</button>
-            <button onclick="run('discussions')" title="Обсуждения GitHub (решения проблем)">GitHub</button>
           </div>
         </div>
         <div class="terminal-box" id="terminal-log">Ожидание записей журнала…</div>
@@ -1650,7 +1714,7 @@ Telegram Desktop -> MTProto Proxy (127.0.0.1:1443) -> WebSocket -> Telegram DC
 
 <script>
 var stateCache = null;
-var isAutoScroll = true;
+var userScrolledUp = false;
 
 function $(id) { return document.getElementById(id); }
 
@@ -1676,7 +1740,9 @@ function api(url, method, payload, onSuccess, onError) {
     if (xhr.status >= 200 && xhr.status < 300) {
       if (onSuccess) onSuccess(data);
     } else {
-      if (onError) onError(data.error || 'Ошибка запроса');
+      var err = data.error || data.message || ('Ошибка ' + xhr.status);
+      if (onError) onError(err);
+      else toast(err, true);
     }
   };
   xhr.onerror = function() {
@@ -1687,31 +1753,41 @@ function api(url, method, payload, onSuccess, onError) {
 
 function run(action, data) {
   api('/api/action', 'POST', { action: action, data: data || {} }, function(res) {
-    if (res.message) toast(res.message, false);
+    toast(res.message || 'Действие выполнено', false);
     poll();
   }, function(err) {
     toast(err, true);
+    poll();
   });
 }
 
-function showModal(id) { $(id).style.display = 'flex'; }
-function hideModal(id) { $(id).style.display = 'none'; }
+function showModal(id) {
+  var m = $(id);
+  if (m) m.style.display = 'flex';
+}
+
+function hideModal(id) {
+  var m = $(id);
+  if (m) m.style.display = 'none';
+}
 
 function saveAlt(val) {
   if (val) run('save_alt', { strategy: val });
 }
 
 function generateSecret() {
-  var hex = '0123456789abcdef';
-  var s = '';
-  for (var i = 0; i < 32; i++) s += hex.charAt(Math.floor(Math.random() * 16));
-  $('cfg-secret').value = s;
-  toast('Сгенерирован новый 32-hex Secret', false);
+  var chars = '0123456789abcdef';
+  var sec = '';
+  for (var i = 0; i < 32; i++) {
+    sec += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  $('cfg-secret').value = sec;
+  toast('Сгенерирован новый 32-hex ключ', false);
 }
 
 function copySecret() {
   var val = $('cfg-secret').value;
-  if (!val) return;
+  if (!val) { toast('Ключ пустой', true); return; }
   if (navigator.clipboard) {
     navigator.clipboard.writeText(val);
     toast('Secret скопирован в буфер', false);
@@ -1758,7 +1834,21 @@ function submitConfig() {
 function renderUI(d) {
   stateCache = d;
 
-  // Header status
+  // Header status & live count badge
+  var runningCount = 0;
+  var z = d.projects.zapret || {};
+  var zapRunning = !!(z.winws || z.running || z.service === 'running');
+  if (zapRunning) runningCount++;
+  var t = d.projects.tgproxy || {};
+  var tgRunning = !!t.running;
+  if (tgRunning) runningCount++;
+
+  var countBadge = $('live-count-badge');
+  if (countBadge) {
+    countBadge.textContent = runningCount + '/2';
+    countBadge.className = 'badge ' + (runningCount === 2 ? 'badge-green' : (runningCount === 1 ? 'badge-yellow' : ''));
+  }
+
   var dot = $('live-dot');
   var txt = $('live-text');
   if (d.busy) {
@@ -1805,7 +1895,11 @@ function renderUI(d) {
     $('tg-update-badge').style.display = 'none';
   }
 
-  $('auto-update-toggle').checked = !!d.state.auto_update_tg;
+  // Auto-update checkboxes
+  var autoTg = $('auto-update-tg-toggle');
+  if (autoTg) autoTg.checked = d.state.auto_update_tg !== false;
+  var autoZap = $('auto-update-zapret-toggle');
+  if (autoZap) autoZap.checked = Boolean(d.state.auto_update_zapret);
 
   // Active alt & Strategies select
   var activeAlt = d.state.zapret_strategy || '';
@@ -1858,11 +1952,15 @@ function renderUI(d) {
 
   // Logs Terminal
   var logBox = $('terminal-log');
-  var logs = d.logs || [];
-  var atBottom = logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 40;
-  logBox.textContent = logs.join('\n');
-  if (isAutoScroll || atBottom) {
-    logBox.scrollTop = logBox.scrollHeight;
+  if (logBox) {
+    var newLogText = (d.logs || []).join('\n');
+    if (logBox.textContent !== newLogText) {
+      var wasAtBottom = logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 40;
+      logBox.textContent = newLogText;
+      if (!userScrolledUp || wasAtBottom) {
+        logBox.scrollTop = logBox.scrollHeight;
+      }
+    }
   }
 }
 
@@ -1897,6 +1995,13 @@ function switchReadme(tab) {
 
 // Initial setup
 loadConfig();
+var logEl = $('terminal-log');
+if (logEl) {
+  logEl.addEventListener('scroll', function() {
+    var dist = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight;
+    userScrolledUp = dist > 40;
+  });
+}
 poll();
 window.setInterval(poll, 800);
 </script>
@@ -2006,6 +2111,7 @@ def main(hide_console_on_start=True):
         except Exception:
             pass
     finally:
+        backend.stop_zapret_tasks()
         server.shutdown()
         server.server_close()
 
@@ -2016,4 +2122,7 @@ if __name__ == "__main__":
     switched = main()
     if switched:
         show_console()
-        core.main()
+        import ru_helper
+        ru_helper.main()
+    else:
+        sys.exit(0)

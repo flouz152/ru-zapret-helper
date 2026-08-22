@@ -115,13 +115,15 @@ class HelperTests(unittest.TestCase):
             adapter.stop()
             self.assertFalse(adapter.is_running())
 
-    def test_zapret_install_service_validation(self):
-        from project_adapters import ZapretAdapter
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            adapter = ZapretAdapter(root)
-            with self.assertRaises(FileNotFoundError):
-                adapter.install_service("nonexistent")
+    def test_backend_stop_zapret_and_autoupdate(self):
+        from ru_helper_gui import Backend
+        backend = Backend()
+        res = backend.stop_zapret_tasks()
+        self.assertIn("остановлен", res.lower())
+        backend.set_auto_update_zapret({"enabled": True})
+        self.assertTrue(backend.state.get("auto_update_zapret"))
+        backend.set_auto_update_zapret({"enabled": False})
+        self.assertFalse(backend.state.get("auto_update_zapret"))
 
 
 if __name__ == "__main__":

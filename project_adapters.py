@@ -593,12 +593,13 @@ class ZapretAdapter:
         except OSError:
             pass
 
+        simple_bin = f'"{winws_exe}"'
         res = subprocess.run(
-            [SC_EXE, "create", "zapret", f"binPath= {bin_path_val}", 'DisplayName= "zapret"', "start= auto"],
+            [SC_EXE, "create", "zapret", f"binPath= {simple_bin}", "DisplayName= zapret", "start= auto"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             creationflags=NO_WINDOW,
         )
-        if res.returncode != 0:
+        if res.returncode != 0 and "exists" not in (res.stdout + res.stderr).lower():
             raise RuntimeError(res.stdout.strip() or res.stderr.strip() or "Не удалось создать службу zapret")
 
         subprocess.run(
@@ -606,18 +607,21 @@ class ZapretAdapter:
             capture_output=True, check=False, creationflags=NO_WINDOW,
         )
 
+        try:
+            import winreg
+            with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r"System\CurrentControlSet\Services\zapret") as key:
+                winreg.SetValueEx(key, "ImagePath", 0, winreg.REG_EXPAND_SZ, bin_path_val)
+                winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "zapret")
+                winreg.SetValueEx(key, "Description", 0, winreg.REG_SZ, "Zapret DPI bypass software")
+                winreg.SetValueEx(key, "zapret-discord-youtube", 0, winreg.REG_SZ, path.stem)
+        except Exception as reg_err:
+            raise RuntimeError(f"Не удалось записать параметры службы в реестр: {reg_err}")
+
         res_start = subprocess.run(
             [SC_EXE, "start", "zapret"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             creationflags=NO_WINDOW,
         )
-
-        try:
-            import winreg
-            with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r"System\CurrentControlSet\Services\zapret") as key:
-                winreg.SetValueEx(key, "zapret-discord-youtube", 0, winreg.REG_SZ, path.stem)
-        except Exception:
-            pass
 
         time.sleep(0.5)
         if self._service_status() != "running" and not _is_process_running("winws.exe"):
