@@ -593,14 +593,25 @@ class ZapretAdapter:
         except OSError:
             pass
 
-        simple_bin = f'"{winws_exe}"'
+        sc_cmd = f'"{SC_EXE}" create zapret binPath= "{winws_exe}" DisplayName= zapret start= auto'
         res = subprocess.run(
-            [SC_EXE, "create", "zapret", f"binPath= {simple_bin}", "DisplayName= zapret", "start= auto"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            sc_cmd, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
             creationflags=NO_WINDOW,
         )
         if res.returncode != 0 and "exists" not in (res.stdout + res.stderr).lower():
-            raise RuntimeError(res.stdout.strip() or res.stderr.strip() or "Не удалось создать службу zapret")
+            # Fallback to PowerShell New-Service if sc.exe fails
+            ps_create = (
+                f'$bin = [System.IO.Path]::GetFullPath("{winws_exe}"); '
+                f'New-Service -Name "zapret" -BinaryPathName $bin -DisplayName "zapret" -StartupType Automatic -ErrorAction Stop'
+            )
+            res_ps = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_create],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                creationflags=NO_WINDOW,
+            )
+            if res_ps.returncode != 0 and "exists" not in (res_ps.stdout + res_ps.stderr).lower():
+                err_msg = res.stderr.strip() or res.stdout.strip() or res_ps.stderr.strip() or "Не удалось создать службу zapret"
+                raise RuntimeError(err_msg)
 
         subprocess.run(
             [SC_EXE, "description", "zapret", "Zapret DPI bypass software"],
