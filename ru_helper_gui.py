@@ -380,6 +380,9 @@ class Backend:
         core.BASE_DIR.mkdir(parents=True, exist_ok=True)
         archive = core.BASE_DIR / Path(asset["name"]).name
         staging = core.BASE_DIR / ".zapret-staging"
+        was_running = self.projects.zapret.status()["running"] or self.projects.zapret.status()["winws"]
+        was_service = self.projects.zapret.status()["service"] == "running"
+        strategy = self.state.get("zapret_strategy")
         try:
             _download(asset["browser_download_url"], archive)
             if staging.exists():
@@ -395,11 +398,23 @@ class Backend:
                 core._kill_winws()
                 for service in (core.ZAPRET_SVC_NAME, "WinDivert", "WinDivert14"):
                     core._stop_service(service)
-                shutil.rmtree(core.ZAPRET_DIR, ignore_errors=True)
-            staging.replace(core.ZAPRET_DIR)
+                time.sleep(0.5)
+            core.ZAPRET_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(staging, core.ZAPRET_DIR, dirs_exist_ok=True)
+            core.patch_service_bat(core.ZAPRET_DIR)
             self.state["zapret_version"] = data.get("tag_name")
             core.save_state(self.state)
-            return "zapret успешно установлен"
+            if was_service and strategy:
+                try:
+                    self.projects.zapret.install_service(strategy)
+                except Exception:
+                    pass
+            elif was_running and strategy:
+                try:
+                    self.projects.zapret.start(strategy)
+                except Exception:
+                    pass
+            return f"zapret успешно обновлён ({self.state['zapret_version']})"
         finally:
             archive.unlink(missing_ok=True)
             if staging.exists():

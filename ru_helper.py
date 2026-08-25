@@ -664,14 +664,16 @@ def draw_menu(zapret_latest, tgproxy_latest, state):
     print()
 
 
-def install_zapret(state):
-    cls()
-    for line in _grad_logo(): print(line)
-    print(f"\n  {GRAD[0]}=== Установка zapret-discord-youtube ==={RST}\n")
+def install_zapret(state, interactive=True):
+    if interactive:
+        cls()
+        for line in _grad_logo(): print(line)
+        print(f"\n  {GRAD[0]}=== Установка zapret-discord-youtube ==={RST}\n")
 
     if not is_admin():
         print(f"  {R}Требуются права администратора! Перезапустите от имени администратора.{RST}")
-        pause(); return
+        if interactive: pause()
+        return
 
     stop = threading.Event()
     spin = threading.Thread(
@@ -693,7 +695,8 @@ def install_zapret(state):
         except Exception as e2:
             stop.set(); spin.join()
             print(f"\n  {R}Ошибка получения релиза: {e2}{RST}")
-            pause(); return
+            if interactive: pause()
+            return
     stop.set(); spin.join()
     print("\r" + " " * 50 + "\r", end="")
 
@@ -701,7 +704,8 @@ def install_zapret(state):
     asset = next((a for a in data["assets"] if a["name"].endswith(".zip")), None)
     if not asset:
         print(f"  {R}Не найден .zip в релизе{RST}")
-        pause(); return
+        if interactive: pause()
+        return
 
     url  = asset["browser_download_url"]
     name = asset["name"]
@@ -715,13 +719,18 @@ def install_zapret(state):
     try:
         download_file(url, tmp, "Скачивание")
     except KeyboardInterrupt:
-        pause(); return
+        if interactive: pause()
+        return
     except Exception as e:
         print(f"\n  {R}Ошибка скачивания: {e}{RST}")
-        pause(); return
+        if interactive: pause()
+        return
 
     print(f"  {TXT}Распаковка...{RST}")
     staging = BASE_DIR / ".zapret-staging"
+    was_running = PROJECTS.zapret.status()["running"] or PROJECTS.zapret.status()["winws"]
+    was_service = PROJECTS.zapret.status()["service"] == "running"
+    strategy = state.get("zapret_strategy")
     try:
         if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
@@ -741,11 +750,22 @@ def install_zapret(state):
             _kill_winws()
             for service in (ZAPRET_SVC_NAME, "WinDivert", "WinDivert14"):
                 _stop_service(service)
-            time.sleep(1)
-            shutil.rmtree(ZAPRET_DIR, ignore_errors=True)
-            if ZAPRET_DIR.exists():
-                raise PermissionError(f"Не удалось удалить старую папку: {ZAPRET_DIR}")
-        staging.replace(ZAPRET_DIR)
+            time.sleep(0.5)
+
+        ZAPRET_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(staging, ZAPRET_DIR, dirs_exist_ok=True)
+        patch_service_bat(ZAPRET_DIR)
+
+        if was_service and strategy:
+            try:
+                PROJECTS.zapret.install_service(strategy)
+            except Exception:
+                pass
+        elif was_running and strategy:
+            try:
+                PROJECTS.zapret.start(strategy)
+            except Exception:
+                pass
     except (PermissionError, zipfile.BadZipFile, ValueError, OSError) as e:
         tmp.unlink(missing_ok=True)
         if staging.exists():
@@ -754,28 +774,36 @@ def install_zapret(state):
         print(f"  {Y}Возможные причины:{RST}")
         print(f"  {DIM}• Антивирус блокирует WinDivert64.sys — добавьте папку в исключения{RST}")
         print(f"  {DIM}• Файл занят другим процессом — перезагрузите ПК и попробуйте снова{RST}")
-        pause(); return
+        if interactive: pause()
+        return
     except Exception as e:
         tmp.unlink(missing_ok=True)
         if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
         print(f"\n  {R}Ошибка установки: {e}{RST}")
-        pause(); return
-    tmp.unlink(missing_ok=True)
+        if interactive: pause()
+        return
+    finally:
+        tmp.unlink(missing_ok=True)
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
 
     state["zapret_version"] = tag
     save_state(state)
+    log(f"zapret успешно установлен / обновлён: {tag}")
     if changed:
         print(f"  {DIM}service.bat исправлен: тесты запускаются в этом окне, Esc возвращает в меню.{RST}")
     print(f"\n  {GRAD[0]}Готово! {TXT}zapret установлен в:{RST}")
     print(f"  {DIM}{ZAPRET_DIR}{RST}")
-    pause()
+    if interactive:
+        pause()
 
 
-def install_tgproxy(state):
-    cls()
-    for line in _grad_logo(): print(line)
-    print(f"\n  {GRAD[0]}=== Установка tg-ws-proxy ==={RST}\n")
+def install_tgproxy(state, interactive=True):
+    if interactive:
+        cls()
+        for line in _grad_logo(): print(line)
+        print(f"\n  {GRAD[0]}=== Установка tg-ws-proxy ==={RST}\n")
 
     stop = threading.Event()
     spin = threading.Thread(
@@ -786,7 +814,8 @@ def install_tgproxy(state):
     except Exception as e:
         stop.set(); spin.join()
         print(f"\n  {R}Ошибка: {e}{RST}")
-        pause(); return
+        if interactive: pause()
+        return
     stop.set(); spin.join()
     print("\r" + " " * 50 + "\r", end="")
 
@@ -796,7 +825,8 @@ def install_tgproxy(state):
         print(f"  {R}Не найден Windows .exe в релизе{RST}")
         for a in data["assets"]:
             print(f"    {DIM}{a['name']}{RST}")
-        pause(); return
+        if interactive: pause()
+        return
 
     url  = asset["browser_download_url"]
     name = asset["name"]
@@ -807,19 +837,32 @@ def install_tgproxy(state):
     print(f"  {TXT}Версия:{RST} {GRAD[0]}{tag}{RST}")
     print(f"  {TXT}Файл:  {RST} {DIM}{name}{RST}\n")
 
+    was_running = PROJECTS.tgproxy.is_running()
+    if was_running:
+        PROJECTS.tgproxy.stop()
+
     try:
         download_file(url, dest, "Скачивание")
     except KeyboardInterrupt:
-        pause(); return
+        if was_running: PROJECTS.tgproxy.start()
+        if interactive: pause()
+        return
     except Exception as e:
+        if was_running: PROJECTS.tgproxy.start()
         print(f"\n  {R}Ошибка скачивания: {e}{RST}")
-        pause(); return
+        if interactive: pause()
+        return
+
+    if was_running:
+        PROJECTS.tgproxy.start()
 
     state["tgproxy_version"] = tag
     save_state(state)
+    log(f"tg-ws-proxy успешно установлен / обновлён: {tag}")
     print(f"\n  {GRAD[0]}Готово! {TXT}tg-ws-proxy установлен в:{RST}")
     print(f"  {DIM}{dest}{RST}")
-    pause()
+    if interactive:
+        pause()
 
 
 def find_strategy(state):
@@ -1278,31 +1321,37 @@ def _manage_auto_updates(state):
 
 
 def _check_and_apply_updates(state, force=False):
+    zap_inst = state.get("zapret_version")
+    auto_zap = state.get("auto_update_zapret", False)
+    tg_inst = state.get("tgproxy_version")
+    auto_tg = state.get("auto_update_tg", True)
+
+    if not force and not auto_zap and not auto_tg:
+        return
+
     print(f"\n  {TXT}Проверка обновлений сервисов...{RST}")
     zap_latest, tg_latest = get_latest_versions(state, show_progress=True)
 
     updated_any = False
-    zap_inst = state.get("zapret_version")
-    auto_zap = state.get("auto_update_zapret", False)
     if (force or auto_zap) and zap_inst and zap_latest not in ("?", None, "") and zap_inst != zap_latest and PROJECTS.zapret.installed():
         print(f"\n  {GRAD[0]}● {TXT}Доступно обновление zapret: {DIM}{zap_inst} → {zap_latest}{RST}")
-        log(f"Обновление zapret: {zap_inst} → {zap_latest}")
+        log(f"Автообновление zapret: {zap_inst} → {zap_latest}")
         try:
-            install_zapret(state)
+            install_zapret(state, interactive=False)
             updated_any = True
         except Exception as e:
             print(f"  {R}Ошибка обновления zapret: {e}{RST}")
+            log(f"Ошибка автообновления zapret: {e}")
 
-    tg_inst = state.get("tgproxy_version")
-    auto_tg = state.get("auto_update_tg", True)
     if (force or auto_tg) and tg_inst and tg_latest not in ("?", None, "") and tg_inst != tg_latest and PROJECTS.tgproxy.installed():
         print(f"\n  {GRAD[0]}● {TXT}Доступно обновление tg-ws-proxy: {DIM}{tg_inst} → {tg_latest}{RST}")
-        log(f"Обновление tg-ws-proxy: {tg_inst} → {tg_latest}")
+        log(f"Автообновление tg-ws-proxy: {tg_inst} → {tg_latest}")
         try:
-            install_tgproxy(state)
+            install_tgproxy(state, interactive=False)
             updated_any = True
         except Exception as e:
             print(f"  {R}Ошибка обновления tg-ws-proxy: {e}{RST}")
+            log(f"Ошибка автообновления tg-ws-proxy: {e}")
 
     if not updated_any:
         if force:
