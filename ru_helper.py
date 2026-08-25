@@ -1169,6 +1169,12 @@ def services_menu(state):
         tg_text = "запущен" if tgp_status["running"] else "остановлен"
         print(f"  {TXT}tg-ws-proxy :{RST} "
               f"{GRAD[0] + '● ' + tg_text + RST if tgp_status['installed'] else R + '✗ не установлен' + RST}")
+        
+        auto_zap = state.get("auto_update_zapret", False)
+        auto_tg = state.get("auto_update_tg", True)
+        zap_auto_str = f"{GRAD[0]}вкл{RST}" if auto_zap else f"{DIM}выкл{RST}"
+        tg_auto_str = f"{GRAD[0]}вкл{RST}" if auto_tg else f"{DIM}выкл{RST}"
+        print(f"  {TXT}Автообновление:{RST} zapret [{zap_auto_str}] | tg-ws-proxy [{tg_auto_str}]")
         print()
 
         def mi(num, text):
@@ -1181,6 +1187,7 @@ def services_menu(state):
         print(mi("5", "Остановить zapret"))
         print(mi("6", "Остановить tg-ws-proxy"))
         print(mi("T", "Открыть в Telegram (tg-ws-proxy)"))
+        print(mi("U", "Автообновление обоих сервисов (настройка / оба сервиса)"))
         print(mi("7", "Удалить zapret из автозапуска"))
         print(mi("8", "Выключить автозапуск tg-ws-proxy"))
         print(mi("9", "Удалить zapret-сервис и автозапуск TG"))
@@ -1199,6 +1206,7 @@ def services_menu(state):
         elif ch == "5": _stop_zapret_now()
         elif ch == "6": _stop_tgproxy_now()
         elif ch == "T": _open_tg_now()
+        elif ch == "U": _manage_auto_updates(state)
         elif ch == "7": _remove_one_service(ZAPRET_SVC_NAME)
         elif ch == "8": _set_tgproxy_autostart(False)
         elif ch == "9": _remove_one_service(ZAPRET_SVC_NAME); _set_tgproxy_autostart(False)
@@ -1206,6 +1214,101 @@ def services_menu(state):
         elif ch == "B": _delete_files(TGPROXY_DIR, "tg-ws-proxy", state, clear_key="tgproxy_version")
         elif ch == "C": _delete_files(ZAPRET_DIR, "zapret", state, clear_key="zapret_version"); _delete_files(TGPROXY_DIR, "tg-ws-proxy", state, clear_key="tgproxy_version")
         elif ch == "0": break
+
+
+def _manage_auto_updates(state):
+    while True:
+        cls()
+        for line in _grad_logo(): print(line)
+        print(f"\n  {GRAD[0]}=== Настройка автообновления сервисов ==={RST}\n")
+
+        auto_zap = state.get("auto_update_zapret", False)
+        auto_tg = state.get("auto_update_tg", True)
+
+        zap_status_str = f"{GRAD[0]}ВКЛЮЧЕНО{RST}" if auto_zap else f"{R}ВЫКЛЮЧЕНО{RST}"
+        tg_status_str = f"{GRAD[0]}ВКЛЮЧЕНО{RST}" if auto_tg else f"{R}ВЫКЛЮЧЕНО{RST}"
+
+        print(f"  {TXT}Автообновление zapret      :{RST} {zap_status_str}")
+        print(f"  {TXT}Автообновление tg-ws-proxy :{RST} {tg_status_str}")
+        print()
+
+        def mi(num, text):
+            return f"  {GRAD[7]}[{GRAD[0]}{num}{GRAD[7]}]{RST} {TXT}{text}{RST}"
+
+        print(mi("1", f"Автообновление zapret: {'выключить' if auto_zap else 'включить'}"))
+        print(mi("2", f"Автообновление tg-ws-proxy: {'выключить' if auto_tg else 'включить'}"))
+        print(mi("3", "Включить автообновление для обоих сервисов"))
+        print(mi("4", "Выключить автообновление для обоих сервисов"))
+        print(mi("5", "Проверить и обновить оба сервиса сейчас"))
+        print(mi("0", "Назад"))
+        print()
+
+        ch = input(f"  {GRAD[0]}>{RST} ").strip().upper()
+        if ch == "1":
+            state["auto_update_zapret"] = not auto_zap
+            save_state(state)
+            log(f"Автообновление zapret: {state['auto_update_zapret']}")
+            print(f"\n  {GRAD[0]}✓ {TXT}Автообновление zapret {'включено' if state['auto_update_zapret'] else 'выключено'}.{RST}")
+            time.sleep(0.7)
+        elif ch == "2":
+            state["auto_update_tg"] = not auto_tg
+            save_state(state)
+            log(f"Автообновление tg-ws-proxy: {state['auto_update_tg']}")
+            print(f"\n  {GRAD[0]}✓ {TXT}Автообновление tg-ws-proxy {'включено' if state['auto_update_tg'] else 'выключено'}.{RST}")
+            time.sleep(0.7)
+        elif ch == "3":
+            state["auto_update_zapret"] = True
+            state["auto_update_tg"] = True
+            save_state(state)
+            log("Автообновление обоих сервисов включено")
+            print(f"\n  {GRAD[0]}✓ {TXT}Автообновление обоих сервисов включено.{RST}")
+            time.sleep(0.7)
+        elif ch == "4":
+            state["auto_update_zapret"] = False
+            state["auto_update_tg"] = False
+            save_state(state)
+            log("Автообновление обоих сервисов выключено")
+            print(f"\n  {GRAD[0]}✓ {TXT}Автообновление обоих сервисов выключено.{RST}")
+            time.sleep(0.7)
+        elif ch == "5":
+            _check_and_apply_updates(state, force=True)
+            pause()
+        elif ch == "0":
+            break
+
+
+def _check_and_apply_updates(state, force=False):
+    print(f"\n  {TXT}Проверка обновлений сервисов...{RST}")
+    zap_latest, tg_latest = get_latest_versions(state, show_progress=True)
+
+    updated_any = False
+    zap_inst = state.get("zapret_version")
+    auto_zap = state.get("auto_update_zapret", False)
+    if (force or auto_zap) and zap_inst and zap_latest not in ("?", None, "") and zap_inst != zap_latest and PROJECTS.zapret.installed():
+        print(f"\n  {GRAD[0]}● {TXT}Доступно обновление zapret: {DIM}{zap_inst} → {zap_latest}{RST}")
+        log(f"Обновление zapret: {zap_inst} → {zap_latest}")
+        try:
+            install_zapret(state)
+            updated_any = True
+        except Exception as e:
+            print(f"  {R}Ошибка обновления zapret: {e}{RST}")
+
+    tg_inst = state.get("tgproxy_version")
+    auto_tg = state.get("auto_update_tg", True)
+    if (force or auto_tg) and tg_inst and tg_latest not in ("?", None, "") and tg_inst != tg_latest and PROJECTS.tgproxy.installed():
+        print(f"\n  {GRAD[0]}● {TXT}Доступно обновление tg-ws-proxy: {DIM}{tg_inst} → {tg_latest}{RST}")
+        log(f"Обновление tg-ws-proxy: {tg_inst} → {tg_latest}")
+        try:
+            install_tgproxy(state)
+            updated_any = True
+        except Exception as e:
+            print(f"  {R}Ошибка обновления tg-ws-proxy: {e}{RST}")
+
+    if not updated_any:
+        if force:
+            print(f"\n  {GRAD[0]}✓ {TXT}Все установленные сервисы уже имеют актуальные версии.{RST}")
+        else:
+            log("Проверка автообновлений: актуальные версии установлены")
 
 def _svc_status(name):
     try:
@@ -1662,6 +1765,8 @@ def main():
 
     try:
         zapret_latest, tgproxy_latest = get_latest_versions(state)
+        if state.get("auto_update_tg", True) or state.get("auto_update_zapret", False):
+            _check_and_apply_updates(state, force=False)
     except (KeyboardInterrupt, EOFError):
         return
 
