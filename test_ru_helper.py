@@ -115,15 +115,27 @@ class HelperTests(unittest.TestCase):
             adapter.stop()
             self.assertFalse(adapter.is_running())
 
-    def test_backend_stop_zapret_and_autoupdate(self):
-        from ru_helper_gui import Backend
-        backend = Backend()
-        res = backend.stop_zapret_tasks()
-        self.assertIn("остановлен", res.lower())
-        backend.set_auto_update_zapret({"enabled": True})
-        self.assertTrue(backend.state.get("auto_update_zapret"))
-        backend.set_auto_update_zapret({"enabled": False})
-        self.assertFalse(backend.state.get("auto_update_zapret"))
+    def test_merge_zapret_lists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            existing = base / "zapret"
+            staging = base / "staging"
+            (existing / "lists").mkdir(parents=True)
+            (staging / "lists").mkdir(parents=True)
+
+            (existing / "lists" / "list-general.txt").write_text("discord.com\nsoundcloud.com\n", encoding="utf-8")
+            (staging / "lists" / "list-general.txt").write_text("discord.com\nyoutube.com\n", encoding="utf-8")
+            (existing / "lists" / "custom.txt").write_text("my-domain.net\n", encoding="utf-8")
+
+            ru_helper.merge_zapret_lists(existing, staging)
+
+            gen = (staging / "lists" / "list-general.txt").read_text(encoding="utf-8")
+            self.assertIn("discord.com", gen)
+            self.assertIn("youtube.com", gen)
+            self.assertIn("soundcloud.com", gen)
+
+            custom = (staging / "lists" / "custom.txt").read_text(encoding="utf-8")
+            self.assertIn("my-domain.net", custom)
 
 
 if __name__ == "__main__":

@@ -664,6 +664,62 @@ def draw_menu(zapret_latest, tgproxy_latest, state):
     print()
 
 
+def merge_zapret_lists(existing_zapret_dir: Path, staging_zapret_dir: Path):
+    existing_lists_dir = existing_zapret_dir / "lists"
+    staging_lists_dir = staging_zapret_dir / "lists"
+
+    if not existing_lists_dir.exists() or not existing_lists_dir.is_dir():
+        return
+
+    staging_lists_dir.mkdir(parents=True, exist_ok=True)
+
+    for existing_file in existing_lists_dir.glob("*.txt"):
+        staging_file = staging_lists_dir / existing_file.name
+        if staging_file.exists():
+            try:
+                existing_lines = existing_file.read_text(encoding="utf-8-sig", errors="replace").splitlines()
+                staging_lines = staging_file.read_text(encoding="utf-8-sig", errors="replace").splitlines()
+
+                seen_normalized = set()
+                merged = []
+
+                for line in staging_lines:
+                    stripped = line.strip()
+                    if stripped and not stripped.startswith("#"):
+                        seen_normalized.add(stripped.lower())
+                    merged.append(line)
+
+                added_from_existing = []
+                for line in existing_lines:
+                    stripped = line.strip()
+                    if stripped and not stripped.startswith("#"):
+                        norm = stripped.lower()
+                        if norm not in seen_normalized:
+                            seen_normalized.add(norm)
+                            added_from_existing.append(line)
+                    elif stripped.startswith("#"):
+                        if line not in staging_lines and line not in added_from_existing:
+                            added_from_existing.append(line)
+
+                if added_from_existing:
+                    if merged and merged[-1].strip() != "":
+                        merged.append("")
+                    merged.extend(added_from_existing)
+
+                out_text = "\n".join(merged).rstrip() + "\n"
+                staging_file.write_text(out_text, encoding="utf-8")
+            except Exception:
+                try:
+                    shutil.copy2(existing_file, staging_file)
+                except Exception:
+                    pass
+        else:
+            try:
+                shutil.copy2(existing_file, staging_file)
+            except Exception:
+                pass
+
+
 def install_zapret(state, interactive=True):
     if interactive:
         cls()
@@ -746,6 +802,7 @@ def install_zapret(state, interactive=True):
         changed = bool(patch_service_bat(staging))
 
         if ZAPRET_DIR.exists():
+            merge_zapret_lists(ZAPRET_DIR, staging)
             print(f"  {TXT}Останавливаем старую установку...{RST}")
             _kill_winws()
             for service in (ZAPRET_SVC_NAME, "WinDivert", "WinDivert14"):

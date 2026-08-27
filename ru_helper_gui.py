@@ -395,6 +395,7 @@ class Backend:
                 subdirs[0].rmdir()
             core.patch_service_bat(staging)
             if core.ZAPRET_DIR.exists():
+                core.merge_zapret_lists(core.ZAPRET_DIR, staging)
                 core._kill_winws()
                 for service in (core.ZAPRET_SVC_NAME, "WinDivert", "WinDivert14"):
                     core._stop_service(service)
