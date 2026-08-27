@@ -334,6 +334,13 @@ class TgWsProxyAdapter:
     def executable(self) -> Optional[Path]:
         return find_tg_executable(self.root)
 
+    def installed(self) -> bool:
+        return self.executable is not None and self.executable.exists()
+
+    @property
+    def is_installed(self) -> bool:
+        return self.installed()
+
     @property
     def config_file(self) -> Path:
         return TG_CONFIG_FILE
@@ -420,6 +427,13 @@ class ZapretAdapter:
     @property
     def service_file(self) -> Path:
         return self.root / "service.bat"
+
+    def installed(self) -> bool:
+        return self.root.exists() and (self.root / "bin" / "winws.exe").exists()
+
+    @property
+    def is_installed(self) -> bool:
+        return self.installed()
 
     def strategies(self) -> List[Path]:
         if not self.root.exists():

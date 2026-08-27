@@ -138,5 +138,22 @@ class HelperTests(unittest.TestCase):
             self.assertIn("my-domain.net", custom)
 
 
+    def test_adapter_installed_methods(self):
+        from project_adapters import ZapretAdapter, TgWsProxyAdapter
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            zapret = ZapretAdapter(root / "zapret")
+            tgproxy = TgWsProxyAdapter(root / "tg")
+            self.assertFalse(zapret.installed())
+            self.assertFalse(zapret.is_installed)
+            self.assertFalse(tgproxy.installed())
+            self.assertFalse(tgproxy.is_installed)
+
+            (root / "zapret" / "bin").mkdir(parents=True)
+            (root / "zapret" / "bin" / "winws.exe").write_text("dummy")
+            self.assertTrue(zapret.installed())
+            self.assertTrue(zapret.is_installed)
+
+
 if __name__ == "__main__":
     unittest.main()
